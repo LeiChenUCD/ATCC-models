@@ -33,10 +33,10 @@ def train_epoch(model, dataloader, criterion, optimizer, device, scheduler=None)
     return running_loss, pred_correct, pred_all, (pred_correct / pred_all)
 
 
-def evaluate(model, dataloader, device, print_stats=False):
+def evaluate(model, dataloader, device, num_classes, print_stats=False):
 
     pred_correct, pred_all = 0, 0
-    stats = {i: [0, 0] for i in range(101)}
+    stats = {i: [0, 0] for i in range(num_classes + 1)}
 
     for i, data in enumerate(dataloader):
         inputs, labels = data
