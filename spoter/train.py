@@ -20,18 +20,9 @@ from spoter.spoter_model import SPOTER
 from spoter.utils import train_epoch, evaluate
 from spoter.gaussian_noise import GaussianNoise
 
-# need change: num_classes, training_set_path, testing_set_path, validation_set_path, checkpoint_path, freeze_layer
 
 def get_default_args():
     parser = argparse.ArgumentParser(add_help=False)
-
-    # ("out-checkpoints/" + args.experiment_name + "/checkpoint_t_" + str(checkpoint_index) + ".pth"))
-    # eg. "out-checkpoints/lsa_64_spoter/checkpoint_t_0.pth"
-    parser.add_argument("--checkpoint_path", type=str, default='',
-                        help="path of previously saved model")
-
-    parser.add_argument("--freeze_layer", type=list, default=[],
-                        help="indices of layer to be freezed")
 
     parser.add_argument("--experiment_name", type=str, default="lsa_64_spoter",
                         help="Name of the experiment after which the logs and plots will be named")
@@ -40,10 +31,11 @@ def get_default_args():
                         help="Hidden dimension of the underlying Transformer model")
     parser.add_argument("--seed", type=int, default=379,
                         help="Seed with which to initialize all the random components of the training")
+    parser.add_argument("--is_test", type=bool, default=False)
 
     # Data
-    parser.add_argument("--training_set_path", type=str, default="WLASL100_train_25fps.csv", help="Path to the training dataset CSV file")
-    parser.add_argument("--testing_set_path", type=str, default="WLASL100_test_25fps.csv", help="Path to the testing dataset CSV file")
+    parser.add_argument("--training_set_path", type=str, default="", help="Path to the training dataset CSV file")
+    parser.add_argument("--testing_set_path", type=str, default="", help="Path to the testing dataset CSV file")
     parser.add_argument("--experimental_train_split", type=float, default=None,
                         help="Determines how big a portion of the training set should be employed (intended for the "
                              "gradually enlarging training set experiment from the paper)")
@@ -53,7 +45,11 @@ def get_default_args():
     parser.add_argument("--validation_set_size", type=float,
                         help="Proportion of the training set to be split as validation set, if 'validation_size' is set"
                              " to 'split-from-train'")
-    parser.add_argument("--validation_set_path", type=str, default="WLASL100_val_25fps.csv", help="Path to the validation dataset CSV file")
+    parser.add_argument("--validation_set_path", type=str, default="", help="Path to the validation dataset CSV file")
+
+    # Pre-training / Fine-tuning
+    parser.add_argument("--finetune", type=bool, default=False)
+    parser.add_argument("--checkpoint_path", type=str, default=None)
 
     # Training hyperparameters
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs to train the model for")
@@ -115,21 +111,15 @@ def train(args):
 
     # Construct the model
     slrt_model = SPOTER(num_classes=args.num_classes, hidden_dim=args.hidden_dim)
+    if args.finetune:
+        assert args.checkpoint_path is not None
+        state_dict = torch.load(args.checkpoint_path)
+        del state_dict['linear_class.weight']
+        del state_dict['linear_class.bias']
+        slrt_model.load_state_dict(state_dict, strict=False)
+
     slrt_model.train(True)
     slrt_model.to(device)
-
-    # reload model if wish
-    checkpoint_path = args.checkpoint_path
-    if checkpoint_path != '':
-        slrt_model.load_state_dict(torch.load("out-checkpoints/" + args.experiment_name + "/checkpoint_t_0.pth"))
-
-    # freeze parameter of layer with indices in args.freeze_layer
-    counter = 0
-    for _, m in slrt_model.named_parameters():
-        print(_)
-        if counter in args.freeze_layer:
-            m.requires_grad_(False)
-        counter += 1
 
     # Construct the other modules
     cel_criterion = nn.CrossEntropyLoss()
@@ -184,52 +174,55 @@ def train(args):
     top_train_acc, top_val_acc = 0, 0
     checkpoint_index = 0
 
-    if args.experimental_train_split:
-        print("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
-        logging.info("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
+    if not args.is_test:
+        if args.experimental_train_split:
+            print("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
+            logging.info("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
 
-    else:
-        print("Starting " + args.experiment_name + "...\n\n")
-        logging.info("Starting " + args.experiment_name + "...\n\n")
-
-    for epoch in range(args.epochs):
-        train_loss, _, _, train_acc = train_epoch(slrt_model, train_loader, cel_criterion, sgd_optimizer, device)
-        losses.append(train_loss.item() / len(train_loader))
-        train_accs.append(train_acc)
-
-        if val_loader:
-            slrt_model.train(False)
-            _, _, val_acc = evaluate(slrt_model, val_loader, device)
-            slrt_model.train(True)
-            val_accs.append(val_acc)
-
-        # Save checkpoints if they are best in the current subset
-        if args.save_checkpoints:
-            if train_acc > top_train_acc:
-                top_train_acc = train_acc
-                torch.save(slrt_model.state_dict(), "out-checkpoints/" + args.experiment_name + "/checkpoint_t_" + str(checkpoint_index) + ".pth")
-
-            if val_acc > top_val_acc:
-                top_val_acc = val_acc
-                torch.save(slrt_model.state_dict(), "out-checkpoints/" + args.experiment_name + "/checkpoint_v_" + str(checkpoint_index) + ".pth")
-
-        if epoch % args.log_freq == 0:
-            print("[" + str(epoch + 1) + "] TRAIN  loss: " + str(train_loss.item() / len(train_loader)) + " acc: " + str(train_acc))
-            logging.info("[" + str(epoch + 1) + "] TRAIN  loss: " + str(train_loss.item() / len(train_loader)) + " acc: " + str(train_acc))
+        else:
+            print("Starting " + args.experiment_name + "...\n\n")
+            logging.info("Starting " + args.experiment_name + "...\n\n")
+    
+        for epoch in range(args.epochs):
+            train_loss, _, _, train_acc = train_epoch(slrt_model, train_loader, cel_criterion, sgd_optimizer, device)
+            losses.append(train_loss.item() / len(train_loader))
+            train_accs.append(train_acc)
 
             if val_loader:
-                print("[" + str(epoch + 1) + "] VALIDATION  acc: " + str(val_acc))
-                logging.info("[" + str(epoch + 1) + "] VALIDATION  acc: " + str(val_acc))
+                slrt_model.train(False)
+                _, _, val_acc = evaluate(slrt_model, val_loader, device, args.num_classes)
+                slrt_model.train(True)
+                val_accs.append(val_acc)
 
-            print("")
-            logging.info("")
+            # Save checkpoints if they are best in the current subset
+            if args.save_checkpoints:
+                if train_acc > top_train_acc:
+                    top_train_acc = train_acc
+                    torch.save(slrt_model.state_dict(), "out-checkpoints/" + args.experiment_name + "/checkpoint_t_" + str(checkpoint_index) + ".pth")
 
-        # Reset the top accuracies on static subsets
-        if epoch % 10 == 0:
-            top_train_acc, top_val_acc = 0, 0
-            checkpoint_index += 1
+                if val_acc > top_val_acc:
+                    top_val_acc = val_acc
+                    torch.save(slrt_model.state_dict(), "out-checkpoints/" + args.experiment_name + "/checkpoint_v_" + str(checkpoint_index) + ".pth")
 
-        lr_progress.append(sgd_optimizer.param_groups[0]["lr"])
+            if epoch % args.log_freq == 0:
+                print("[" + str(epoch + 1) + "] TRAIN  loss: " + str(train_loss.item() / len(train_loader)) + " acc: " + str(train_acc))
+                logging.info("[" + str(epoch + 1) + "] TRAIN  loss: " + str(train_loss.item() / len(train_loader)) + " acc: " + str(train_acc))
+
+                if val_loader:
+                    print("[" + str(epoch + 1) + "] VALIDATION  acc: " + str(val_acc))
+                    logging.info("[" + str(epoch + 1) + "] VALIDATION  acc: " + str(val_acc))
+
+                print("")
+                logging.info("")
+
+            # Reset the top accuracies on static subsets
+            if epoch % 10 == 0:
+                top_train_acc, top_val_acc = 0, 0
+                checkpoint_index += 1
+
+            lr_progress.append(sgd_optimizer.param_groups[0]["lr"])
+    else:
+      checkpoint_index = args.epochs // 10
 
     # MARK: TESTING
 
@@ -237,15 +230,15 @@ def train(args):
     logging.info("\nTesting checkpointed models starting...\n")
 
     top_result, top_result_name = 0, ""
-
+  
     if eval_loader:
         for i in range(checkpoint_index):
             for checkpoint_id in ["t", "v"]:
                 tested_model = SPOTER(num_classes=args.num_classes, hidden_dim=args.hidden_dim)
                 # tested_model = VisionTransformer(dim=2, mlp_dim=108, num_classes=100, depth=12, heads=8)
-                tested_model.load_state_dict(torch.load("out-checkpoints/" + args.experiment_name + "/checkpoint_" + checkpoint_id + "_" + str(i) + ".pth"))
+                tested_model.load_state_dict(torch.load("out-checkpoints/" + args.experiment_name + "/checkpoint_" + checkpoint_id + "_" + str(i) + ".pth", map_location=torch.device('cpu')))
                 tested_model.train(False)
-                _, _, eval_acc = evaluate(tested_model, eval_loader, device, print_stats=True)
+                _, _, eval_acc = evaluate(tested_model, eval_loader, device, args.num_classes, print_stats=True)
 
                 if eval_acc > top_result:
                     top_result = eval_acc
