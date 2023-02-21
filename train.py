@@ -20,7 +20,6 @@ from spoter.spoter_model import SPOTER
 from spoter.utils import train_epoch, evaluate
 from spoter.gaussian_noise import GaussianNoise
 
-# need change: num_classes, training_set_path, testing_set_path, validation_set_path, checkpoint_path, freeze_layer
 
 def get_default_args():
     parser = argparse.ArgumentParser(add_help=False)
@@ -35,7 +34,6 @@ def get_default_args():
     parser.add_argument("--is_test", type=bool, default=False)
 
     # Data
-    parser.add_argument("--freeze_layer", type=list, default=[], help="indices of layer to be freezed")
     parser.add_argument("--training_set_path", type=str, default="", help="Path to the training dataset CSV file")
     parser.add_argument("--testing_set_path", type=str, default="", help="Path to the testing dataset CSV file")
     parser.add_argument("--experimental_train_split", type=float, default=None,
@@ -51,8 +49,6 @@ def get_default_args():
 
     # Pre-training / Fine-tuning
     parser.add_argument("--finetune", type=bool, default=False)
-     # ("out-checkpoints/" + args.experiment_name + "/checkpoint_t_" + str(checkpoint_index) + ".pth"))
-    # eg. "out-checkpoints/lsa_64_spoter/checkpoint_t_0.pth"
     parser.add_argument("--checkpoint_path", type=str, default=None)
 
     # Training hyperparameters
@@ -124,14 +120,6 @@ def train(args):
 
     slrt_model.train(True)
     slrt_model.to(device)
-
-    # freeze parameter of layer with indices in args.freeze_layer
-    counter = 0
-    for _, m in slrt_model.named_parameters():
-        print(_)
-        if counter in args.freeze_layer:
-            m.requires_grad_(False)
-        counter += 1
 
     # Construct the other modules
     cel_criterion = nn.CrossEntropyLoss()
