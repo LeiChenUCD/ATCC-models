@@ -176,7 +176,10 @@ def augment_shear(sign: dict, type: str, squeeze_ratio: tuple) -> dict:
     augmented_landmarks = cv2.perspectiveTransform(np.array(landmarks_array, dtype=np.float32), mtx)
 
     augmented_zero_landmark = cv2.perspectiveTransform(np.array([[[0, 0]]], dtype=np.float32), mtx)[0][0]
-    augmented_landmarks = np.stack([np.where(sub == augmented_zero_landmark, [0, 0], sub) for sub in augmented_landmarks])
+    try:
+        augmented_landmarks = np.stack([np.where(sub == augmented_zero_landmark, [0, 0], sub) for sub in augmented_landmarks])
+    except:
+        return {}
 
     body_landmarks = __numpy_to_dictionary(augmented_landmarks)
 
