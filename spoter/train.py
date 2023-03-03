@@ -20,7 +20,7 @@ from spoter.spoter_model import SPOTER
 from spoter.utils import train_epoch, evaluate
 from spoter.gaussian_noise import GaussianNoise
 
-# need change: num_classes, training_set_path, testing_set_path, validation_set_path, checkpoint_path, freeze_layer
+# need change: num_classes, training_set_path, testing_set_path, validation_set_path, finetune, checkpoint_path, freeze_layer
 
 def get_default_args():
     parser = argparse.ArgumentParser(add_help=False)
