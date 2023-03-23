@@ -179,7 +179,7 @@ def augment_shear(sign: dict, type: str, squeeze_ratio: tuple) -> dict:
     try:
         augmented_landmarks = np.stack([np.where(sub == augmented_zero_landmark, [0, 0], sub) for sub in augmented_landmarks])
     except:
-        return {}
+        return sign
 
     body_landmarks = __numpy_to_dictionary(augmented_landmarks)
 

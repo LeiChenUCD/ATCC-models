@@ -32,10 +32,9 @@ def get_default_args():
                         help="Hidden dimension of the underlying Transformer model")
     parser.add_argument("--seed", type=int, default=379,
                         help="Seed with which to initialize all the random components of the training")
-    parser.add_argument("--is_test", type=bool, default=False)
+    parser.add_argument("--is_test_only", type=bool, default=False, help="Test the model only")
 
     # Data
-    parser.add_argument("--freeze_layer", type=list, default=[], help="indices of layer to be freezed")
     parser.add_argument("--training_set_path", type=str, default="", help="Path to the training dataset CSV file")
     parser.add_argument("--testing_set_path", type=str, default="", help="Path to the testing dataset CSV file")
     parser.add_argument("--experimental_train_split", type=float, default=None,
@@ -54,6 +53,8 @@ def get_default_args():
      # ("out-checkpoints/" + args.experiment_name + "/checkpoint_t_" + str(checkpoint_index) + ".pth"))
     # eg. "out-checkpoints/lsa_64_spoter/checkpoint_t_0.pth"
     parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--freeze_layer", type=list, default=[], help="indices of layer to be freezed")
+    parser.add_argument("--freeze_transformer", type=bool, default=False, help="Freeze transformer layer")
 
     # Training hyperparameters
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs to train the model for")
@@ -125,13 +126,27 @@ def train(args):
     slrt_model.train(True)
     slrt_model.to(device)
 
+    # print model structure
+    print(slrt_model)
+
     # freeze parameter of layer with indices in args.freeze_layer
-    counter = 0
-    for _, m in slrt_model.named_parameters():
-        print(_)
-        if counter in args.freeze_layer:
-            m.requires_grad_(False)
-        counter += 1
+    if len(args.freeze_layer) > 0:
+        counter = 0
+        for _, m in slrt_model.named_parameters():
+            print(_)
+            if counter in args.freeze_layer:
+                m.requires_grad_(False)
+            counter += 1
+
+    # freeze transformer layer by args.freeze_transformer
+    if args.freeze_transformer:
+        print('Freezed layer:')
+        logging.info("Freezed layer: " + "\n")
+        for name, m in slrt_model.named_parameters():
+            if 'transformer' in name:
+                m.requires_grad_(False)
+                print(name)
+                logging.info(name + "\n")
 
     # Construct the other modules
     cel_criterion = nn.CrossEntropyLoss()
@@ -146,8 +161,9 @@ def train(args):
     # MARK: DATA
 
     # Training set
-    transform = transforms.Compose([GaussianNoise(args.gaussian_mean, args.gaussian_std)])          # image transformation
-    train_set = CzechSLRDataset(args.training_set_path, transform=transform, augmentations=True)
+    if not args.is_test_only:
+        transform = transforms.Compose([GaussianNoise(args.gaussian_mean, args.gaussian_std)])          # image transformation
+        train_set = CzechSLRDataset(args.training_set_path, transform=transform, augmentations=True)
 
     # Validation set
     if args.validation_set == "from-file":
@@ -186,7 +202,7 @@ def train(args):
     top_train_acc, top_val_acc = 0, 0
     checkpoint_index = 0
 
-    if not args.is_test:
+    if not args.is_test_only:
         if args.experimental_train_split:
             print("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
             logging.info("Starting " + args.experiment_name + "_" + str(args.experimental_train_split).replace(".", "") + "...\n\n")
@@ -247,7 +263,8 @@ def train(args):
         for i in range(checkpoint_index):
             for checkpoint_id in ["t", "v"]:
                 tested_model = SPOTER(num_classes=args.num_classes, hidden_dim=args.hidden_dim)
-                # tested_model = VisionTransformer(dim=2, mlp_dim=108, num_classes=100, depth=12, heads=8)
+                tested_model.train(False)
+                tested_model.to(device)
                 tested_model.load_state_dict(torch.load("out-checkpoints/" + args.experiment_name + "/checkpoint_" + checkpoint_id + "_" + str(i) + ".pth", map_location=torch.device('cpu')))
                 tested_model.train(False)
                 tested_model.to(device)
