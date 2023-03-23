@@ -263,8 +263,6 @@ def train(args):
         for i in range(checkpoint_index):
             for checkpoint_id in ["t", "v"]:
                 tested_model = SPOTER(num_classes=args.num_classes, hidden_dim=args.hidden_dim)
-                tested_model.train(False)
-                tested_model.to(device)
                 tested_model.load_state_dict(torch.load("out-checkpoints/" + args.experiment_name + "/checkpoint_" + checkpoint_id + "_" + str(i) + ".pth", map_location=torch.device('cpu')))
                 tested_model.train(False)
                 tested_model.to(device)
